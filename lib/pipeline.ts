@@ -6,10 +6,10 @@ const ObjectiveSchema = z.object({ title: z.string().min(3), type: z.enum(object
 const LessonSchema = z.object({ title: z.string(), learningObjective: z.string(), explanation: z.string(), keyTerms: z.array(z.string()), example: z.string(), quiz: z.array(z.object({ question: z.string(), options: z.array(z.string()), answer: z.string(), explanation: z.string() })), task: z.object({ title: z.string(), instructions: z.string(), successCriteria: z.array(z.string()) }).optional(), citedChunkIds: z.array(z.string()), supportLevel: z.enum(['strong', 'weak', 'insufficient']) });
 const OutlineSchema = z.object({ title: z.string(), modules: z.array(z.object({ title: z.string(), description: z.string(), objectiveIds: z.array(z.string()) })) });
 
-const geminiApiKey = () => process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-export function hasLlmConfig() { return Boolean(geminiApiKey()); }
-export function getLlmSetupMessage() { return 'Generation requires a real Gemini API key. Configure GEMINI_API_KEY (or GOOGLE_API_KEY) in .env.local, then restart the server.'; }
-export const llmModel = () => process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+const groqApiKey = () => process.env.GROQ_API_KEY;
+export function hasLlmConfig() { return Boolean(groqApiKey()); }
+export function getLlmSetupMessage() { return 'Generation requires a real Groq API key. Configure GROQ_API_KEY in .env.local, then restart the server.'; }
+export const llmModel = () => process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 const id = (p: string) => `${p}_${Math.random().toString(36).slice(2, 10)}`;
 
 export function ingestSources(sources: Source[]) { return sources.filter(s => s.rawText.trim().length > 0); }
@@ -31,34 +31,34 @@ export function chunkSources(sources: Source[]): Chunk[] {
   return chunks.flatMap(c => c.text.length <= 1800 ? [c] : c.text.match(/[\s\S]{1,1600}(?:\s|$)/g)!.map((text, i) => ({ ...c, id: id('chunk'), text: text.trim(), locationLabel: `${c.locationLabel}.${i + 1}` })));
 }
 
-type GeminiMessage = { role: 'system' | 'user'; content: string };
+type GroqMessage = { role: 'system' | 'user'; content: string };
 
-function geminiEndpoint() {
-  const key = geminiApiKey();
+function groqEndpoint() {
+  const key = groqApiKey();
   if (!key) throw new Error(getLlmSetupMessage());
-  return `https://generativelanguage.googleapis.com/v1beta/models/${llmModel()}:generateContent?key=${encodeURIComponent(key)}`;
+  return { url: 'https://api.groq.com/openai/v1/chat/completions', key };
 }
 
-function toGeminiContents(messages: GeminiMessage[]) {
-  const systemText = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n');
-  const userText = messages.filter(m => m.role === 'user').map(m => m.content).join('\n\n');
-  return [{ role: 'user', parts: [{ text: [systemText, userText].filter(Boolean).join('\n\n') }] }];
-}
-
-async function jsonChat<T>(messages: GeminiMessage[], schema: z.ZodType<T>) {
-  const res = await fetch(geminiEndpoint(), {
+async function jsonChat<T>(messages: GroqMessage[], schema: z.ZodType<T>) {
+  const { url, key } = groqEndpoint();
+  const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${key}`,
+    },
     body: JSON.stringify({
-      contents: toGeminiContents(messages),
-      generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
+      model: llmModel(),
+      messages,
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
     }),
   });
   const body = await res.text();
-  if (!res.ok) throw new Error(`Gemini API request failed (${res.status}): ${body}`);
+  if (!res.ok) throw new Error(`Groq API request failed (${res.status}): ${body}`);
   let raw = '';
-  try { raw = JSON.parse(body).candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || '').join('') || ''; }
-  catch (e) { throw new Error(`Gemini API returned an unexpected response: ${(e as Error).message}\nRaw response: ${body}`); }
+  try { raw = JSON.parse(body).choices?.[0]?.message?.content || ''; }
+  catch (e) { throw new Error(`Groq API returned an unexpected response: ${(e as Error).message}\nRaw response: ${body}`); }
   try { return schema.parse(JSON.parse(raw)); } catch (e) { const err = new Error(`LLM returned invalid JSON: ${(e as Error).message}\nRaw response: ${raw}`); throw err; }
 }
 

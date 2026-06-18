@@ -1,0 +1,13 @@
+export type SourceType = 'paste' | 'txt' | 'md' | 'transcript';
+export type ObjectiveType = 'conceptual' | 'procedural' | 'troubleshooting' | 'reference' | 'project';
+export type Source = { id: string; projectId: string; title: string; type: SourceType; rawText: string; createdAt: string; metadata?: Record<string, string> };
+export type Chunk = { id: string; sourceId: string; sourceTitle: string; sectionPath?: string; locationLabel: string; text: string };
+export type Objective = { id: string; projectId: string; title: string; type: ObjectiveType; difficulty: number; evidenceChunkIds: string[] };
+export type QuizQuestion = { question: string; options: string[]; answer: string; explanation: string };
+export type PracticalTask = { title: string; instructions: string; successCriteria: string[] };
+export type Citation = { chunkId: string; sourceTitle: string; locationLabel: string; quote?: string };
+export type Lesson = { id: string; objectiveId: string; title: string; learningObjective: string; explanation: string; keyTerms: string[]; example: string; quiz: QuizQuestion[]; task?: PracticalTask; citations: Citation[]; supportLevel: 'strong' | 'weak' | 'insufficient' };
+export type Module = { id: string; title: string; description: string; objectiveIds: string[]; lessons: Lesson[] };
+export type Course = { id: string; projectId: string; title: string; audience: string; modules: Module[]; published?: boolean };
+export type Project = { id: string; name: string; audience: string; goal?: string; createdAt: string };
+export type PipelineResult = { chunks: Chunk[]; objectives: Objective[]; course: Course; warnings: string[] };
